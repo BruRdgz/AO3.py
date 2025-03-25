@@ -1,9 +1,9 @@
-from . import BaseParser
+from ao3.parsers import Base
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 
 
-class WorkParser(BaseParser):
+class WorkParser(Base):
     """Parser for AO3 work pages.
 
     This parser extracts metadata from AO3 work/story pages.
@@ -48,7 +48,7 @@ class WorkParser(BaseParser):
 
     def _fetch_summary(self) -> Optional[str]:
         """Extract the work summary."""
-        summary_div = self._soup.select_one("div.summary .userstuff")
+        summary_div = self.soup.select_one("div.summary .userstuff")
         if not summary_div:
             return None
         return summary_div.text.strip()
@@ -185,14 +185,14 @@ class WorkParser(BaseParser):
 
     def _fetch_series(self) -> Optional[str]:
         """Extract series information if present."""
-        position_span = self._soup.select_one("dd.series span.position")
+        position_span = self.soup.select_one("dd.series span.position")
         if position_span:
             series_link = position_span.select_one("a")
             if series_link:
                 return series_link.text.strip()
 
         # Fallback: try other potential selectors
-        series_element = self._soup.select_one("dd.series a:not(.previous):not(.next)")
+        series_element = self.soup.select_one("dd.series a:not(.previous):not(.next)")
         if series_element:
             return series_element.text.strip()
 

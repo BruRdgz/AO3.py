@@ -1,5 +1,5 @@
 """
-Module for classes representing works on ArchiveOfOurOwn.org.
+Module for models representing works within Archive Of Our Own.
 """
 
 from __future__ import annotations
@@ -8,20 +8,45 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Any
 
-from requests import HTTPError
-
-from ao3.client import Client
+from ao3.client import Session
 from ao3.parsers import WorkParser
-
 
 __all__ = ["ArchiveWork"]
 
 
+class WorkError(Exception):
+    """
+    Base exception for all exceptions raised by this module.
+    """
+
+    pass
+
+
+class WorkNotFoundError(Exception):
+    """
+    Raised when the requested work couldn't be found within AO3.
+    """
+
+    pass
+
+
+class WorkRestrictedError(Exception):
+    """
+    Raised when the work is restricted, but no credentials are provided by the client.
+    """
+
+    pass
+
+
 @dataclass
-class _ArchiveData:
+class WorkMetadata:
+    """
+    Model representing the metadata of a work within AO3.
+    """
+
     ID: str
     title: str = ""
-    author: str = "Anonymous"
+    author: str = ""
     link: str = ""
 
     summary: Optional[str] = None
@@ -67,200 +92,171 @@ class _ArchiveData:
         if self.warnings is None:
             self.warnings = []
 
-    @classmethod
-    def from_dictionary(cls, data: dict[str, Any]) -> _ArchiveData:
-        return cls(**data)
+    def update(self, data: dict[str, Any]) -> None:
+        for k, v in data.items():
+            try:
+                if hasattr(self, k):
+                    setattr(self, k, v)
+            except Exception as e:
+                raise ValueError(
+                    f"Invalid data parameter for {self.__class__.__name__}: {e}"
+                )
 
 
 class ArchiveWork:
     """
-    A work within ArchiveOfOurOwn.org.
+    Represents a work (story) on Archive Of Our Own.
+
+    This class provides methods for retrieving and accessing work metadata,
+    including title, author, statistics, and tags.
+
+    Args:
+        work_id (str): The ID of the work.
+        load (bool, optional): If the work metadata should be loaded upon initialization. Defaults to False.
     """
 
     def __init__(
         self,
         work_id: str,
-        session: Optional[Client] = None,
-        lazy: bool = True,
+        load: bool = False,
     ) -> None:
+        self._session = Session.instance()
         self._id = work_id
-        self._session = session if session else Client()
-        self._data: Optional[_ArchiveData] = None
-        self._is_loaded = False
-        if not lazy:
+        self._data = WorkMetadata(
+            ID=work_id, link=f"https://archiveofourown.org/works/{work_id}"
+        )
+        self._loaded = False
+
+        if load:
             self.reload()
 
     def reload(self) -> None:
-        """Fetch and load work data from AO3."""
-        try:
-            response = self._session.fetch(f"/works/{self._id}", soup=True)
-        except HTTPError as e:
-            if e.response.status_code == 404:
-                raise ValueError(f"Failed to load work {self._id}: {str(e)}") from e
-            raise  # Re-raise other HTTP errors
-
-        parsed_data = WorkParser(response).parse()
-        parsed_data["ID"] = self._id
-        parsed_data["link"] = f"https://archiveofourown.org/works/{self._id}"
-
-        self._data = _ArchiveData.from_dictionary(parsed_data)
-        self._is_loaded = True
+        """Reload the work metadata."""
+        self._loaded = True
+        response = self._session.fetch(self._data.link, soup=True)
+        parser = WorkParser(response)
+        self._data.update(parser.parse())
 
     def _ensure_loaded(self) -> None:
-        """Ensure the work data is loaded."""
-        if not self._is_loaded:
+        if not self._loaded:
             self.reload()
 
     @property
     def title(self) -> str:
-        """The title of the work."""
+        """Return the title of the work."""
+        self._ensure_loaded()
         return self._data.title
 
     @property
-    def id(self) -> str:
-        """Get the work ID."""
-        return self._id
-
-    @property
     def author(self) -> str:
-        """Get the work author(s)."""
+        """Return the author of the work."""
         self._ensure_loaded()
         return self._data.author
 
     @property
     def link(self) -> str:
-        """Get the work link."""
+        """Return the link to the work."""
         self._ensure_loaded()
         return self._data.link
 
     @property
     def summary(self) -> Optional[str]:
-        """Get the work summary."""
+        """Return the summary of the work."""
         self._ensure_loaded()
         return self._data.summary
 
     @property
     def language(self) -> str:
-        """Get the work language."""
+        """Return the language of the work."""
         self._ensure_loaded()
         return self._data.language
 
     @property
     def words(self) -> int:
-        """Get the work word count."""
+        """Return the word count of the work."""
         self._ensure_loaded()
         return self._data.words
 
     @property
     def chapters_published(self) -> int:
-        """Get the number of published chapters."""
+        """Return the number of chapters published."""
         self._ensure_loaded()
         return self._data.chapters_published
 
     @property
     def chapters_expected(self) -> Optional[int]:
-        """Get the expected number of chapters."""
+        """Return the expected number of chapters."""
         self._ensure_loaded()
         return self._data.chapters_expected
 
     @property
     def is_completed(self) -> bool:
-        """Check if the work is completed."""
+        """Return whether the work is completed."""
         self._ensure_loaded()
         return self._data.is_completed
 
     @property
     def kudos(self) -> int:
-        """Get the number of kudos."""
+        """Return the number of kudos."""
         self._ensure_loaded()
         return self._data.kudos
 
     @property
     def comments(self) -> int:
-        """Get the number of comments."""
+        """Return the number of comments."""
         self._ensure_loaded()
         return self._data.comments
 
     @property
     def bookmarks(self) -> int:
-        """Get the number of bookmarks."""
+        """Return the number of bookmarks."""
         self._ensure_loaded()
         return self._data.bookmarks
 
     @property
     def hits(self) -> int:
-        """Get the number of hits."""
+        """Return the number of hits."""
         self._ensure_loaded()
         return self._data.hits
 
     @property
     def published(self) -> Optional[datetime]:
-        """Get the publication date."""
+        """Return the date the work was published."""
         self._ensure_loaded()
         return self._data.published
 
     @property
     def updated(self) -> Optional[datetime]:
-        """Get the last updated date."""
+        """Return the date the work was updated."""
         self._ensure_loaded()
         return self._data.updated
 
     @property
     def tags(self) -> list[str]:
-        """Get the work tags."""
+        """Return the tags of the work."""
         self._ensure_loaded()
         return self._data.tags
 
     @property
     def relationships(self) -> list[tuple[str, str]]:
-        """Get the character relationships."""
+        """Return the relationships of the work."""
         self._ensure_loaded()
         return self._data.relationships
 
     @property
     def characters(self) -> list[str]:
-        """Get the characters."""
+        """Return the characters of the work."""
         self._ensure_loaded()
         return self._data.characters
 
     @property
     def fandoms(self) -> list[str]:
-        """Get the fandoms."""
+        """Return the fandoms of the work."""
         self._ensure_loaded()
         return self._data.fandoms
 
     @property
-    def categories(self) -> list[str]:
-        """Get the categories."""
-        self._ensure_loaded()
-        return self._data.categories
-
-    @property
     def ratings(self) -> list[str]:
-        """Get the ratings."""
+        """Return the ratings of the work."""
         self._ensure_loaded()
         return self._data.ratings
-
-    @property
-    def warnings(self) -> list[str]:
-        """Get the content warnings."""
-        self._ensure_loaded()
-        return self._data.warnings
-
-    @property
-    def series(self) -> Optional[str]:
-        """Get the series information."""
-        self._ensure_loaded()
-        return self._data.series
-
-    @property
-    def is_restricted(self) -> bool:
-        """Check if the work has restricted access."""
-        self._ensure_loaded()
-        return self._data.is_restricted
-
-    def __repr__(self) -> str:
-        """Return a string representation of the work."""
-        if self._is_loaded:
-            return f"ArchiveWork(id={self._id}, title='{self._data.title}')"
-        return f"ArchiveWork(id={self._id}, not loaded)"
